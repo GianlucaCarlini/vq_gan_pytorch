@@ -1,17 +1,16 @@
 import torch
 import torch.nn as nn
+from functools import partial
 
 
-class BottleNeckResidual(nn.Module):
+class ResidualLayer(nn.Module):
     def __init__(
-        self, in_channels, out_channels, activation=None, reduction=4, *args, **kwargs
+        self, in_channels, out_channels, activation=None, *args, **kwargs
     ) -> None:
         super().__init__(*args, **kwargs)
 
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.reduction = reduction
-        self.bottle_neck_channels = in_channels // reduction
 
         if activation is not None:
             self.activation = activation
@@ -19,34 +18,32 @@ class BottleNeckResidual(nn.Module):
             self.activation = nn.ReLU()
 
         self.conv1 = nn.Conv2d(
-            in_channels=in_channels,
-            out_channels=self.bottle_neck_channels,
-            kernel_size=1,
-            stride=1,
-            padding=0,
-        )
-        self.gn1 = nn.GroupNorm(num_groups=1, num_channels=self.bottle_neck_channels)
-
-        self.conv2 = nn.Conv2d(
-            in_channels=self.bottle_neck_channels,
-            out_channels=self.bottle_neck_channels,
+            in_channels=self.in_channels,
+            out_channels=self.in_channels,
             kernel_size=3,
             stride=1,
             padding=1,
         )
-        self.gn2 = nn.GroupNorm(num_groups=1, num_channels=self.bottle_neck_channels)
+        self.gn1 = nn.GroupNorm(num_groups=1, num_channels=self.in_channels)
 
-        self.conv3 = nn.Conv2d(
-            in_channels=self.bottle_neck_channels,
-            out_channels=self.out_channels,
-            kernel_size=1,
+        self.conv2 = nn.Conv2d(
+            in_channels=self.in_channels,
+            out_channels=self.in_channels,
+            kernel_size=3,
             stride=1,
-            padding=0,
+            padding=1,
         )
-        self.gn3 = nn.GroupNorm(num_groups=1, num_channels=self.out_channels)
+        self.gn2 = nn.GroupNorm(num_groups=1, num_channels=self.in_channels)
 
         if self.in_channels != self.out_channels:
             self.projection = nn.Conv2d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+            )
+            self.projection_residual = nn.Conv2d(
                 in_channels=in_channels,
                 out_channels=out_channels,
                 kernel_size=1,
@@ -55,6 +52,7 @@ class BottleNeckResidual(nn.Module):
             )
         else:
             self.projection = None
+            self.projection_residual = None
 
     def forward(self, x):
         residual = x
@@ -67,11 +65,11 @@ class BottleNeckResidual(nn.Module):
         x = self.gn2(x)
         x = self.activation(x)
 
-        x = self.conv3(x)
-        x = self.gn3(x)
+        if self.projection is not None:
+            residual = self.projection_residual(residual)
 
         if self.projection is not None:
-            residual = self.projection(residual)
+            x = self.projection(x)
 
         x += residual
         x = self.activation(x)
@@ -79,7 +77,7 @@ class BottleNeckResidual(nn.Module):
         return x
 
 
-class ResidualLayer(nn.Module):
+class ResidualBlock(nn.Module):
     def __init__(
         self, in_channels, out_channels, depth, downsample=False, *args, **kwargs
     ) -> None:
@@ -89,7 +87,6 @@ class ResidualLayer(nn.Module):
         self.out_channels = out_channels
         self.depth = depth
         self.activation = kwargs.get("activation", nn.ReLU())
-        self.reduction = kwargs.get("reduction", 4)
 
         if downsample:
             self.downsample = nn.Conv2d(
@@ -107,21 +104,19 @@ class ResidualLayer(nn.Module):
         for i in range(depth):
             if i == depth - 1:
                 self.residual_blocks.append(
-                    BottleNeckResidual(
+                    ResidualLayer(
                         in_channels=in_channels,
                         out_channels=out_channels,
                         activation=self.activation,
-                        reduction=self.reduction,
                     )
                 )
 
             else:
                 self.residual_blocks.append(
-                    BottleNeckResidual(
+                    ResidualLayer(
                         in_channels=in_channels,
                         out_channels=in_channels,
                         activation=self.activation,
-                        reduction=self.reduction,
                     )
                 )
 
