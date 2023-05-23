@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from .blocks import ResidualLayer, ResidualBlock
+from .blocks import ResidualLayer, ResidualBlock, VectorQuantizationLayer
 
 
 class Encoder(nn.Module):
@@ -131,5 +131,68 @@ class Decoder(nn.Module):
 
         x = self.final_norm(x)
         x = self.final_embedding(x)
+
+        return x
+
+
+class VQVAE(nn.Module):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        latentd_dim=4,
+        num_vectors=1024,
+        embed_dim=48,
+        depths=[2, 2, 2, 2],
+        channel_multipliers=[1, 2, 4, 8],
+        *args,
+        **kwargs
+    ) -> None:
+        super().__init__(*args, **kwargs)
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+
+        self.latentd_dim = latentd_dim
+        self.num_vectors = num_vectors
+        self.embed_dim = embed_dim
+        self.depths = depths
+        self.encoder_channel_multipliers = channel_multipliers
+        self.decoder_channel_multipliers = channel_multipliers[::-1]
+
+        self.encoder = Encoder(
+            in_channels=self.in_channels,
+            out_channels=self.latentd_dim,
+            embed_dim=self.embed_dim,
+            depths=self.depths,
+            channel_multipliers=self.encoder_channel_multipliers,
+        )
+
+        self.decoder = Decoder(
+            in_channels=self.latentd_dim,
+            out_channels=self.out_channels,
+            embed_dim=self.embed_dim,
+            depths=self.depths,
+            channel_multipliers=self.decoder_channel_multipliers,
+        )
+
+        self.vector_quantization_layer = VectorQuantizationLayer(
+            num_vectors=self.num_vectors, vector_dimension=self.latentd_dim
+        )
+
+    def encode(self, x):
+        x = self.encoder(x)
+        x, loss, perplexity = self.vector_quantization_layer(x)
+
+        return x, loss, perplexity
+
+    def decode(self, x):
+        x = self.decoder(x)
+
+        return x
+
+    def forward(self, x):
+        x, _, _ = self.encode(x)
+        x = self.decode(x)
 
         return x

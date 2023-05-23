@@ -128,3 +128,84 @@ class ResidualBlock(nn.Module):
             x = self.downsample(x)
 
         return x
+
+
+class VectorQuantizationLayer(nn.Module):
+    def __init__(
+        self, num_vectors=None, vector_dimension=None, beta=None, *args, **kwargs
+    ) -> None:
+        super().__init__(*args, **kwargs)
+
+        if num_vectors is not None:
+            self.num_vectors = num_vectors
+        else:
+            self.num_vectors = 1024
+
+        if vector_dimension is not None:
+            self.vector_dimension = vector_dimension
+        else:
+            self.vector_dimension = 4
+
+        if beta is not None:
+            self.beta = beta
+        else:
+            self.beta = 0.25
+
+        self.embedding = nn.Embedding(
+            num_embeddings=self.num_vectors, embedding_dim=self.vector_dimension
+        )
+
+        self.embedding.weight.data.uniform_(-1 / self.num_vectors, 1 / self.num_vectors)
+
+    def get_indices(self, flatten_inputs):
+        # flatten inputs is NxC dimensional, embedding is KxC dimensional
+        # so we have to transpose the embedding matrix
+        # similarity will be an NxK dimensional matrix
+        similarity = torch.matmul(flatten_inputs, self.embedding.weight.t())
+
+        # here we calculate the L2 distance
+        distances = (
+            torch.sum(flatten_inputs**2, axis=1, keepdims=True)
+            + torch.sum(self.embedding.weight**2, axis=1)
+            - 2 * similarity
+        )
+
+        encoding_indices = torch.argmin(distances, axis=1).unsqueeze(1)
+
+        return encoding_indices
+
+    def forward(self, x):
+        x = x.permute(0, 2, 3, 1).contiguous()
+        flatten = x.view(-1, self.vector_dimension)
+
+        encoding_indices = self.get_indices(flatten)
+
+        # that's like a trick to get the one-hot encoding
+        # instead of using torch.nn.functional.one_hot
+        # we use torch.zeros and scatter the ones to the indices positions
+        # I think this is done because torch one_hot takes long tensors
+        encodings = torch.zeros(size=(encoding_indices.shape[0], self.num_vectors)).to(
+            x
+        )
+        encodings.scatter_(1, encoding_indices, 1)
+
+        quantized = torch.matmul(encodings, self.embedding.weight).view(x.shape)
+
+        commitment_loss = torch.mean((quantized.detach() - x) ** 2)
+        codebook_loss = torch.mean((quantized - x.detach()) ** 2)
+
+        loss = codebook_loss + self.beta * commitment_loss
+
+        # during the forward pass the two input terms cancel out (x and - x)
+        # at backprop time, the stop gradient will exclude (quantized - x)
+        # from the graph, so the gradient of quantized is actually copied to inputs
+        # this is the implementation of the straight-through pass of VQ-VAE paper
+        quantized = x + (quantized - x).detach()
+
+        # perpexity
+        avg_probs = torch.mean(encodings, dim=0)
+        perplexity = torch.exp(-torch.sum(avg_probs * torch.log(avg_probs + 1e-10)))
+
+        quantized = quantized.permute(0, 3, 1, 2).contiguous()
+
+        return quantized, loss, perplexity
