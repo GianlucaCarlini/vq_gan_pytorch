@@ -179,18 +179,25 @@ class VQVAE(nn.Module):
         )
 
     def encode(self, x):
+        return self.encoder(x)
+
+    def encode_and_quantize(self, x):
         x = self.encoder(x)
         x, loss, perplexity = self.vector_quantization_layer(x)
 
         return x, loss, perplexity
 
     def decode(self, x):
+        return self.decoder(x)
+
+    def quantize_and_decode(self, x):
+        x = self.vector_quantization_layer.quantize(x)
         x = self.decoder(x)
 
         return x
 
     def forward(self, x):
-        x, _, _ = self.encode(x)
+        x, _, _ = self.encode_and_quantize(x)
         x = self.decode(x)
 
         return x
