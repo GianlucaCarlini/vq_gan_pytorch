@@ -4,18 +4,21 @@ from functools import partial
 
 
 class ResidualLayer(nn.Module):
-    def __init__(
-        self, in_channels, out_channels, activation=None, *args, **kwargs
-    ) -> None:
+    def __init__(self, in_channels, out_channels, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
         self.in_channels = in_channels
         self.out_channels = out_channels
 
-        if activation is not None:
-            self.activation = activation
-        else:
-            self.activation = nn.ReLU()
+        # In principle, we could use just one activation function
+        # but some activation functions can be parametric, so to give the
+        # maximum flexibility we specify three different activations.
+        # Also, it seems that if I give just one object as activation for the residual
+        # block, it will create a reference to the same object, and I don't know
+        # if this can create problems.
+        self.act1 = nn.GELU()
+        self.act2 = nn.GELU()
+        self.act3 = nn.GELU()
 
         self.conv1 = nn.Conv2d(
             in_channels=self.in_channels,
@@ -59,11 +62,11 @@ class ResidualLayer(nn.Module):
 
         x = self.conv1(x)
         x = self.gn1(x)
-        x = self.activation(x)
+        x = self.act1(x)
 
         x = self.conv2(x)
         x = self.gn2(x)
-        x = self.activation(x)
+        x = self.act2(x)
 
         if self.projection is not None:
             residual = self.projection_residual(residual)
@@ -72,21 +75,20 @@ class ResidualLayer(nn.Module):
             x = self.projection(x)
 
         x += residual
-        x = self.activation(x)
+        x = self.act3(x)
 
         return x
 
 
 class ResidualBlock(nn.Module):
     def __init__(
-        self, in_channels, out_channels, depth, downsample=False, *args, **kwargs
+        self, in_channels, out_channels, depth, downsample=False, **kwargs
     ) -> None:
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
 
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.depth = depth
-        self.activation = kwargs.get("activation", nn.ReLU())
 
         if downsample:
             self.downsample = nn.Conv2d(
@@ -107,7 +109,6 @@ class ResidualBlock(nn.Module):
                     ResidualLayer(
                         in_channels=in_channels,
                         out_channels=out_channels,
-                        activation=self.activation,
                     )
                 )
 
@@ -116,7 +117,6 @@ class ResidualBlock(nn.Module):
                     ResidualLayer(
                         in_channels=in_channels,
                         out_channels=in_channels,
-                        activation=self.activation,
                     )
                 )
 

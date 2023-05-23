@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from .blocks import ResidualLayer, ResidualBlock, VectorQuantizationLayer
+from .blocks import ResidualBlock, VectorQuantizationLayer
 
 
 class Encoder(nn.Module):
@@ -11,10 +11,9 @@ class Encoder(nn.Module):
         embed_dim,
         depths,
         channel_multipliers,
-        *args,
         **kwargs
     ) -> None:
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
 
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -75,10 +74,9 @@ class Decoder(nn.Module):
         embed_dim,
         depths,
         channel_multipliers,
-        *args,
         **kwargs
     ) -> None:
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
 
         self.in_channels = in_channels
         self.out_channels = out_channels
