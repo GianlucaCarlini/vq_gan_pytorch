@@ -13,7 +13,7 @@ class Encoder(nn.Module):
         channel_multipliers,
         **kwargs
     ) -> None:
-        super().__init__(**kwargs)
+        super().__init__()
 
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -40,6 +40,7 @@ class Encoder(nn.Module):
                     else self.embed_dim * self.channel_multipliers[i],
                     depth=depth,
                     downsample=True if i < len(self.depths) - 1 else False,
+                    **kwargs,
                 )
             )
 
@@ -76,7 +77,7 @@ class Decoder(nn.Module):
         channel_multipliers,
         **kwargs
     ) -> None:
-        super().__init__(**kwargs)
+        super().__init__()
 
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -103,6 +104,7 @@ class Decoder(nn.Module):
                     else self.embed_dim * self.channel_multipliers[i],
                     depth=depth,
                     downsample=False,
+                    **kwargs,
                 )
             )
             if i < len(self.depths) - 1:

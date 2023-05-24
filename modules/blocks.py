@@ -4,21 +4,27 @@ from functools import partial
 
 
 class ResidualLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, *args, **kwargs) -> None:
+    def __init__(
+        self, in_channels, out_channels, activations=None, *args, **kwargs
+    ) -> None:
         super().__init__(*args, **kwargs)
 
         self.in_channels = in_channels
         self.out_channels = out_channels
 
         # In principle, we could use just one activation function
-        # but some activation functions can be parametric, so to give the
-        # maximum flexibility we specify three different activations.
-        # Also, it seems that if I give just one object as activation for the residual
-        # block, it will create a reference to the same object, and I don't know
-        # if this can create problems.
-        self.act1 = nn.GELU()
-        self.act2 = nn.GELU()
-        self.act3 = nn.GELU()
+        # but in this way torch creates a pointer to the same object.
+        # This should not be a problem since activations are not parametric,
+        # but who knows.
+        # So I decided to instantiate three different activation functions.
+        if activations is not None:
+            self.act1 = activations[0]()
+            self.act2 = activations[1]()
+            self.act3 = activations[2]()
+        else:
+            self.act1 = nn.ReLU()
+            self.act2 = nn.ReLU()
+            self.act3 = nn.ReLU()
 
         self.conv1 = nn.Conv2d(
             in_channels=self.in_channels,
@@ -84,11 +90,13 @@ class ResidualBlock(nn.Module):
     def __init__(
         self, in_channels, out_channels, depth, downsample=False, **kwargs
     ) -> None:
-        super().__init__(**kwargs)
+        super().__init__()
 
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.depth = depth
+
+        activations = kwargs.get("activations", None)
 
         if downsample:
             self.downsample = nn.Conv2d(
@@ -109,6 +117,7 @@ class ResidualBlock(nn.Module):
                     ResidualLayer(
                         in_channels=in_channels,
                         out_channels=out_channels,
+                        activations=activations,
                     )
                 )
 
@@ -117,6 +126,7 @@ class ResidualBlock(nn.Module):
                     ResidualLayer(
                         in_channels=in_channels,
                         out_channels=in_channels,
+                        activations=activations,
                     )
                 )
 
